@@ -2,6 +2,8 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
+// Import the NotificationService
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class OrdersService {
@@ -10,6 +12,8 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private cartService: CartService,
+    // Inject NotificationService
+    private notificationService: NotificationService,
   ) {}
 
   async createOrder(userId: string, storeId: string) {
@@ -65,12 +69,34 @@ export class OrdersService {
 
       // 5. Cleanup: Invalidate Redis Cache after DB success
       await this.cartService.invalidateCache(userId);
+// ✅ 6. NEW: Send Order Confirmation Notification (Async, non-blocking)
+      this.sendOrderNotificationsAsync(userId, order).catch(err => 
+        this.logger.error(`Failed to send order notification: ${err.message}`)
+      );
 
       return order;
 
     } catch (error) {
       this.logger.error(`TRANSACTION FATAL: ${error.message}`);
       throw new BadRequestException('Order processing failed. Please try again.');
+    }
+  }
+
+  // Helper method so notification delays don't block the API response
+  private async sendOrderNotificationsAsync(userId: string, order: any) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user) {
+      await this.notificationService.sendOrderConfirmation(
+        { 
+          email: user.email || '', 
+          phone: user.phone || '', 
+          name: user.name || 'Customer' 
+        },
+        { 
+          id: order.id, 
+          amount: order.totalAmount 
+        }
+      );
     }
   }
 

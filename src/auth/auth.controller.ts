@@ -8,70 +8,83 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-// Change this line to a namespace import
 import * as express from 'express';
+import { AuthService } from './auth.service';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 
-@Controller('auth')
+@ApiTags('Auth')
+@Controller('api/v1/auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
-
- @Post('refresh')
-  async refresh(
-    @Request() req: express.Request // Type explicitly as express.Request
-  ) {
-    // This now matches the service signature exactly
+  @Post('refresh')
+  @ApiOperation({ summary: 'Refresh access token using HTTP-only cookie' })
+  @ApiResponse({ status: 200, description: 'Token refreshed successfully.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid or missing refresh token.' })
+  async refresh(@Request() req: express.Request) {
     return this.authService.refreshTokens(req);
   }
-@Get('me')
-async getProfile(@Request() req: express.Request) {
-  try {
-    const refreshToken = req.cookies?.refresh_token;
 
-    if (!refreshToken) {
-      throw new UnauthorizedException('No refresh token');
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile from refresh token' })
+  @ApiResponse({ status: 200, description: 'Returns user profile and new access token.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - No valid session.' })
+  async getProfile(@Request() req: express.Request) {
+    try {
+      const refreshToken = req.cookies?.refresh_token;
+
+      if (!refreshToken) {
+        throw new UnauthorizedException('No refresh token');
+      }
+
+      const { user, access_token } = await this.authService.getUserFromRefreshToken(refreshToken);
+
+      return { user, access_token };
+    } catch (err) {
+      throw new UnauthorizedException('Invalid session');
     }
-
-    const { user, access_token } =
-      await this.authService.getUserFromRefreshToken(refreshToken);
-
-    return { user, access_token };
-  } catch (err) {
-    throw new UnauthorizedException('Invalid session');
   }
-}
-@Post('logout')
-@UseGuards(AuthGuard('jwt')) //
-async logout(
-  @Request() req: any, 
-  @Res({ passthrough: true }) res: express.Response
-) {
-  // 1. Clear the secure refresh token cookie
- res.clearCookie('refresh_token', {
-  httpOnly: true,
-  secure: false,
-  sameSite: 'lax',
-});
 
-  // 2. Extract userId from the JWT payload attached by the Guard
-  const userId = req.user.userId;
+  @Post('logout')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiOperation({ summary: 'Logout user and clear session' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async logout(
+    @Request() req: any,
+    @Res({ passthrough: true }) res: express.Response,
+  ) {
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      path: '/',
+    });
 
-  // 3. Call the service to invalidate the Redis session
-  return this.authService.logout(userId);
-}
+    const userId = req.user.sub || req.user.userId;
+
+    return this.authService.logout(userId);
+  }
+
   @Post('send-otp')
-  async sendOtp(@Body() body: { identifier: string; type: 'phone' | 'email' }) {
+  @ApiOperation({ summary: 'Send a 6-digit OTP to email or phone' })
+  @ApiBody({ type: SendOtpDto })
+  @ApiResponse({ status: 201, description: 'OTP sent successfully.' })
+  @ApiResponse({ status: 400, description: 'Bad Request - Invalid input data.' })
+  async sendOtp(@Body() body: SendOtpDto) {
     return this.authService.sendOtp(body.identifier, body.type);
   }
 
   @Post('verify-otp')
+  @ApiOperation({ summary: 'Verify OTP and authenticate user' })
+  @ApiBody({ type: VerifyOtpDto })
+  @ApiResponse({ status: 200, description: 'OTP verified, returns access token and sets refresh cookie.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - Invalid or expired OTP.' })
   async verifyOtp(
-    @Body() body: { identifier: string; otp: string },
-    // Use express.Response here
+    @Body() body: VerifyOtpDto,
     @Res({ passthrough: true }) res: express.Response,
   ) {
     return this.authService.verifyOtp(res, body.identifier, body.otp);

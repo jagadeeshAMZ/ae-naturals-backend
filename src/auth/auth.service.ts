@@ -2,11 +2,16 @@ import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { MessagingService } from '../common/messaging.service';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { AppCacheService } from 'src/common/cache/cache.service';
+// Add these imports (adjust path based on where you saved the notification files)
+import { EmailService } from '../notifications/email.service';
+import { SmsService } from '../notifications/sms.service';
+
+
+
 
 @Injectable()
 export class AuthService {
@@ -15,9 +20,11 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-    private messaging: MessagingService,
     private config: ConfigService,
     private cacheService: AppCacheService,
+    // Inject the new services here instead of MessagingService
+    private emailService: EmailService,
+    private smsService: SmsService,
   ) {}
 
   async getUserFromRefreshToken(refreshToken: string) {
@@ -154,7 +161,7 @@ export class AuthService {
    * Generates and sends a 6-digit OTP
    */
   async sendOtp(identifier: string, type: 'phone' | 'email') {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 1000000).toString();
     const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
     const expiryMinutes = this.config.get<number>('OTP_EXPIRY_MINUTES') || 5;
     const expires = new Date(Date.now() + expiryMinutes * 60 * 1000);
@@ -168,12 +175,26 @@ export class AuthService {
       data: { identifier, token: hashedOtp, expires },
     });
 
-    console.log(`Generated OTP for ${identifier}: ${otp} (expires in ${expiryMinutes} minutes)`);
-    // if (type === 'phone') {
-    //   await this.messaging.sendSMS(identifier, otp);
-    // } else {
-    //   await this.messaging.sendEmail(identifier, otp);
-    // }
+    this.logger.log(`Generated OTP for ${identifier}: ${otp} (expires in ${expiryMinutes} minutes)`);
+    
+    // ✅ NEW NOTIFICATION INTEGRATION
+    const message = `Your Flower Fairy Login OTP is ${otp}. It expires in ${expiryMinutes} minutes.`;
+    
+    try {
+      if (type === 'phone') {
+        await this.smsService.sendSMS(identifier, message);
+      } else {
+        const html = `<div style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h2>Flower Fairy Login</h2>
+                        <p>Your OTP is <strong style="font-size: 24px;">${otp}</strong>.</p>
+                        <p>It expires in ${expiryMinutes} minutes.</p>
+                      </div>`;
+        await this.emailService.sendEmail(identifier, 'Your Flower Fairy Login OTP', html);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to send OTP to ${identifier}: ${error.message}`);
+      // Depending on your requirements, you might want to throw an error here so the frontend knows it failed
+    }
 
     return { message: 'OTP sent successfully' };
   }
