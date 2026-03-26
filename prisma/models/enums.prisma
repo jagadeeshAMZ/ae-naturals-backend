@@ -1,0 +1,18 @@
+enum Role {
+  ADMIN
+  USER
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  PHONEPE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}

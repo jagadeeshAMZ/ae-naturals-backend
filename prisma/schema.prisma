@@ -1,0 +1,210 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- ENUMS ---
+enum Role {
+  ADMIN
+  USER
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  PHONEPE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+// models
+model User {
+  id        String    @id @default(cuid())
+  email     String?   @unique // Changed to optional for phone-only users
+  phone     String?   @unique // Added for mobile authentication
+  password  String
+  name      String
+  role      Role      @default(USER)
+  lastLogin DateTime  @default(now()) // Added for session tracking
+  orders    Order[]
+  cart      Cart?
+  // Add these two lines to satisfy the relation requirements
+  accounts  Account[]
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+}
+
+model Store {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  industry      String
+  paymentConfig Json?
+  themeConfig   Json?
+  createdAt     DateTime @default(now())
+
+  products      Product[]
+  orders        Order[]
+  shippingRules ShippingRule[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String
+  slug     String    @unique
+  products Product[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id])
+  name        String
+  slug        String   @unique
+  description String?
+  price       Float // Base Price
+  oldPrice    Float? // MRP
+  images      String[]
+
+  // Specific Metadata
+  ingredients      String?
+  careInstructions String[] // ["Store below 5°C", "Consume within 24h"]
+  deliveryInfo     String[] // ["Same day delivery", "Free over ₹999"]
+
+  // Flipkart-style Attribute System
+  attributes ProductAttribute[]
+  variants   ProductVariant[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  category   Category           @relation(fields: [categoryId], references: [id])
+  categoryId String
+  rating     Float              @default(4.5)
+  reviews    Int                @default(0)
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+}
+
+model ProductAttribute {
+  id        String  @id @default(cuid())
+  name      String // e.g., "Weight", "Size", "Stems"
+  value     String // e.g., "1kg", "Large", "12 Stems"
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductVariant {
+  id            String  @id @default(cuid())
+  productId     String
+  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name          String // e.g., "Eggless", "With Vase"
+  priceModifier Float   @default(0) // Added to base price
+  stock         Int     @default(0)
+}
+
+model Order {
+  id                String           @id @default(cuid())
+  storeId           String
+  userId            String
+  totalAmount       Float
+  status            OrderStatus      @default(PENDING)
+  items             OrderItem[]
+  paymentProvider   PaymentProvider?
+  paymentProviderId String?          @unique
+  createdAt         DateTime         @default(now())
+  user              User             @relation(fields: [userId], references: [id])
+  store             Store            @relation(fields: [storeId], references: [id])
+
+  @@index([storeId])
+  @@index([userId])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float   // Snapshot of price at purchase
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model ShippingRule {
+  id             String  @id @default(cuid())
+  storeId        String
+  store          Store   @relation(fields: [storeId], references: [id])
+  pincode        String
+  deliveryCharge Float
+  isOperational  Boolean @default(true)
+
+  @@index([storeId, pincode])
+}
+
+// Add these to your schema.prisma
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token]) // Compound key for security
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int      @default(1)
+  price     Float // Snapshot of price when added
+  createdAt DateTime @default(now())
+
+  @@unique([cartId, productId])
+}
+
+

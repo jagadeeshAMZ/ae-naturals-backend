@@ -1,0 +1,16 @@
+model Order {
+  id                String          @id @default(cuid())
+  storeId           String
+  store             Store           @relation(fields: [storeId], references: [id])
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  totalAmount       Float          
+  status            OrderStatus     @default(PENDING)
+  items             Json            // Snapshot of products/prices at time of purchase
+  paymentProvider   PaymentProvider?
+  paymentProviderId String?         @unique // Stripe Session ID or Razorpay Order ID
+  createdAt         DateTime        @default(now())
+
+  @@index([storeId])
+  @@index([userId])
+}

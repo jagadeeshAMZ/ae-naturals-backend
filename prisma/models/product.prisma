@@ -1,0 +1,34 @@
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  products  Product[]
+}
+
+model Product {
+  id          String           @id @default(cuid())
+  storeId     String
+  store       Store            @relation(fields: [storeId], references: [id])
+  name        String
+  slug        String           @unique
+  description String?
+  price       Float            // Base price for the simplest variant
+  image       String
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id])
+  variants    ProductVariant[]
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+
+  @@index([storeId])
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id            String  @id @default(cuid())
+  productId     String
+  product       Product @relation(fields: [productId], references: [id])
+  name          String  // e.g., "1kg Eggless", "XL Red"
+  priceModifier Float   @default(0)
+  stock         Int     @default(0)
+}

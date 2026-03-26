@@ -1,0 +1,13 @@
+model Store {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  industry      String         // e.g., "bakery", "clothing", "flowers"
+  paymentConfig Json?          // Store-specific keys (Stripe/Razorpay)
+  themeConfig   Json?          // Branding: Colors, Logo URLs, Fonts
+  createdAt     DateTime       @default(now())
+  
+  products      Product[]
+  orders        Order[]
+  shippingRules ShippingRule[]
+}

@@ -1,0 +1,10 @@
+model ShippingRule {
+  id             String  @id @default(cuid())
+  storeId        String
+  store          Store   @relation(fields: [storeId], references: [id])
+  pincode        String
+  deliveryCharge Float  
+  isOperational  Boolean @default(true)
+
+  @@index([storeId, pincode])
+}
