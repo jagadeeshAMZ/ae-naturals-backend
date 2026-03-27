@@ -6,11 +6,13 @@ import { EmailService } from './email.service';
 import { SmsService } from './sms.service';
 import { NotificationService } from './notification.service';
 import { NotificationController } from './notification.controller';
+import { ProvidersModule } from 'src/providers/providers.module';
 
 @Module({
   imports: [
     ConfigModule,
     CacheModule.register(), // Will use Redis if configured globally, otherwise memory
+    ProvidersModule,
   ],
   controllers: [NotificationController],
   providers: [EmailService, SmsService, NotificationService],

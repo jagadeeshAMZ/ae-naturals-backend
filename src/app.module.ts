@@ -24,7 +24,6 @@ import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
 import { AdminOrdersController } from './admin/orders.controller';
 import { CategoriesService } from './categories/categories.service';
-import { MessagingModule } from './common/messaging.module';
 import { AuthController } from './auth/auth.controller';
 import { CartModule } from './cart/cart.module';
 import { OrdersModule } from './orders/orders.module';
@@ -59,7 +58,6 @@ import { ProvidersController } from './admin/providers.controller';
     PaymentsModule,
     AuthModule,
     UsersModule,
-    MessagingModule,
     OrdersModule,
     CartModule,
     ProvidersModule

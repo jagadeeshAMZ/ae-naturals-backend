@@ -1,92 +1,107 @@
-// src/notifications/email.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import * as nodemailer from 'nodemailer';
+import { PrismaService } from '../prisma/prisma.service';
+import { ProviderFactory } from '../providers/provider.factory';
+import { AppCacheService } from '../common/cache/cache.service';
+import { EncryptionService } from '../common/security/encryption.service';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private sesClient: SESClient;
-  private smtpTransporter: nodemailer.Transporter;
+  private readonly CACHE_KEY = 'email_providers_config';
 
-  constructor(private configService: ConfigService) {
-   // Initialize SES using getOrThrow
-    this.sesClient = new SESClient({
-      region: this.configService.getOrThrow<string>('AWS_REGION'),
-      credentials: {
-        accessKeyId: this.configService.getOrThrow<string>('MY_AWS_ACCESS_KEY'),
-        secretAccessKey: this.configService.getOrThrow<string>('MY_AWS_SECRET_KEY'),
-      },
-    });
-
-    // Initialize SMTP
-    this.smtpTransporter = nodemailer.createTransport({
-      host: this.configService.get<string>('SMTP_HOST'),
-      port: this.configService.get<number>('SMTP_PORT'),
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
-      },
-    });
+  constructor(
+    private prisma: PrismaService,
+    private providerFactory: ProviderFactory,
+    private cacheService: AppCacheService,
+    private encryption: EncryptionService,
+  ) {
+    // 🛑 No AWS or SMTP initialization here!
+    // We fetch credentials from the database when needed.
   }
 
-  async sendEmail(to: string, subject: string, html: string, retries = 2): Promise<boolean> {
-    if (this.configService.get<string>('EMAIL_ENABLED') !== 'true') return false;
+  /**
+   * Sends an email using a resilient dynamic fallback strategy.
+   * It strictly respects the 'isActive' flag in the database.
+   */
+  // src/email/email.service.ts
 
-    const provider = this.configService.get<string>('EMAIL_PROVIDER');
+  async sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+    const providers = await this.getActiveProviders();
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
+    for (const item of providers) {
       try {
-        if (provider === 'aws') {
-          await this.sendViaSES(to, subject, html);
-        } else {
-          await this.sendViaSMTP(to, subject, html);
-        }
-        this.logger.log(`Email sent successfully to ${to} via ${provider}`);
+        const decryptedConfig = JSON.parse(
+          this.encryption.decrypt(item.config),
+        );
+
+        const provider = this.providerFactory.getProvider(
+          'EMAIL',
+          item.provider,
+          decryptedConfig,
+        );
+
+        await provider.send(to, subject, html);
+
+        await this.logNotification('EMAIL', item.provider, to, 'SUCCESS');
         return true;
-      } catch (error) {
-        this.logger.error(`Attempt ${attempt} failed for ${provider}: ${error.message}`);
-        
-        // Fallback Logic
-        if (attempt === retries) {
-          this.logger.warn(`Initiating fallback provider...`);
-          try {
-            if (provider === 'aws') await this.sendViaSMTP(to, subject, html);
-            else await this.sendViaSES(to, subject, html);
-            this.logger.log(`Email sent successfully to ${to} via fallback provider`);
-            return true;
-          } catch (fallbackError) {
-            this.logger.error(`Fallback failed: ${fallbackError.message}`);
-            return false;
-          }
-        }
+      } catch (err) {
+        await this.logNotification(
+          'EMAIL',
+          item.provider,
+          to,
+          'FAILED',
+          err.message,
+        );
+        continue;
       }
     }
+
     return false;
   }
 
-  private async sendViaSES(to: string, subject: string, html: string) {
-    const source = this.configService.get<string>('AWS_SES_SOURCE');
-    const command = new SendEmailCommand({
-      Source: source,
-      Destination: { ToAddresses: [to] },
-      Message: {
-        Subject: { Data: subject },
-        Body: { Html: { Data: html } },
+  /**
+   * Fetches providers from Cache or Database.
+   */
+  private async getActiveProviders() {
+    return await this.cacheService.getOrSet(
+      this.CACHE_KEY,
+      async () => {
+        return await this.prisma.providerConfig.findMany({
+          where: {
+            type: 'EMAIL',
+            isActive: true, // STRICT CHECK: Only fetches active providers
+          },
+          orderBy: { priority: 'asc' },
+        });
       },
-    });
-    await this.sesClient.send(command);
+      300, // Cache for 5 minutes for high performance
+    );
   }
 
-  private async sendViaSMTP(to: string, subject: string, html: string) {
-    const source = this.configService.get<string>('SMTP_USER');
-    await this.smtpTransporter.sendMail({
-      from: source,
-      to,
-      subject,
-      html,
-    });
+  /**
+   * Logs notification attempts for auditing and debugging.
+   */
+  private async logNotification(
+    type: string,
+    provider: string,
+    recipient: string,
+    status: string,
+    error?: string,
+  ) {
+    try {
+      await this.prisma.notificationLog.create({
+        data: { type, provider, recipient, status, error },
+      });
+    } catch (logError) {
+      this.logger.error(`Failed to log notification: ${logError.message}`);
+    }
+  }
+
+  /**
+   * Manual cache invalidation (Call this when updating provider settings via Admin UI)
+   */
+  async invalidateProviderCache() {
+    await this.cacheService.del(this.CACHE_KEY);
+    this.logger.log('Email provider cache invalidated.');
   }
 }

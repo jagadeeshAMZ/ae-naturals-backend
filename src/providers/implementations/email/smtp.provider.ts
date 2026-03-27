@@ -1,19 +1,37 @@
-// smtp.provider.ts
-import * as nodemailer from 'nodemailer';
+// src/providers/implementations/email/smtp.provider.ts
+
 import { EmailProviderInterface } from '../../interfaces/provider.interfaces';
+import * as nodemailer from 'nodemailer';
 
 export class SmtpProvider implements EmailProviderInterface {
-  async sendEmail(to: string, subject: string, html: string, config: any): Promise<boolean> {
-    const transporter = nodemailer.createTransport({
+  private transporter: nodemailer.Transporter;
+  private from: string;
+
+  constructor(private config: any) {
+    if (!config.host || !config.port || !config.user || !config.pass) {
+      throw new Error('SMTP configuration is incomplete.');
+    }
+
+    this.from = config.user;
+
+    this.transporter = nodemailer.createTransport({
       host: config.host,
-      port: Number(config.port),
-      secure: config.secure === true || config.secure === 'true', // true for 465, false for other ports
-      auth: { user: config.user, pass: config.password },
-      tls: { rejectUnauthorized: false } // Helpful for self-signed certs in some environments
+      port: config.port,
+      auth: {
+        user: config.user,
+        pass: config.pass,
+      },
+    });
+  }
+
+  async send(to: string, subject: string, html: string): Promise<boolean> {
+    await this.transporter.sendMail({
+      from: this.from,
+      to,
+      subject,
+      html,
     });
 
-    await transporter.verify(); // Fails fast if auth is wrong
-    await transporter.sendMail({ from: config.from, to, subject, html });
     return true;
   }
 }

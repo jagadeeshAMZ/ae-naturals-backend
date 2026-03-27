@@ -1,22 +1,31 @@
-// twilio.provider.ts
+// src/providers/implementations/sms/twilio.provider.ts
+
 import { Twilio } from 'twilio';
 import { SmsProviderInterface } from '../../interfaces/provider.interfaces';
 
 export class TwilioProvider implements SmsProviderInterface {
-  async sendSms(phone: string, message: string, config: any): Promise<boolean> {
+  private client: Twilio;
+  private fromNumber: string;
+
+  constructor(private config: any) {
     if (!config.accountSid || !config.authToken || !config.fromNumber) {
-      throw new Error('Twilio config incomplete.');
+      throw new Error('Twilio configuration is incomplete.');
     }
 
-    // Ensure phone number has country code (e.g., +91)
+    this.fromNumber = config.fromNumber;
+
+    this.client = new Twilio(config.accountSid, config.authToken);
+  }
+
+  async send(phone: string, message: string): Promise<boolean> {
     const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
 
-    const client = new Twilio(config.accountSid, config.authToken);
-    await client.messages.create({
+    await this.client.messages.create({
       body: message,
-      from: config.fromNumber,
+      from: this.fromNumber,
       to: formattedPhone,
     });
+
     return true;
   }
 }

@@ -3,7 +3,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { MessagingModule } from 'src/common/messaging.module';
 // ... other imports ...
 import { NotificationModule } from '../notifications/notification.module'; // ✅ Import this
 @Global() // Makes JwtService available everywhere without re-importing
