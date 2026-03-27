@@ -8,10 +8,17 @@ export class SmtpProvider implements EmailProviderInterface {
   private from: string;
 
   constructor(private config: any) {
-    if (!config.host || !config.port || !config.user || !config.pass) {
+    const password = config.pass || config.password;
+
+    if (!config.host || !config.user || !password) {
       throw new Error('SMTP configuration is incomplete.');
     }
-
+    console.log('SMTP Config:', {
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      pass: password, // Don't log the actual password
+    });
     this.from = config.user;
 
     this.transporter = nodemailer.createTransport({
@@ -19,7 +26,7 @@ export class SmtpProvider implements EmailProviderInterface {
       port: config.port,
       auth: {
         user: config.user,
-        pass: config.pass,
+        pass: password,
       },
     });
   }

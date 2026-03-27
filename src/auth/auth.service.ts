@@ -8,6 +8,8 @@ import { Request, Response } from 'express';
 import { AppCacheService } from 'src/common/cache/cache.service';
 import { EmailService } from '../notifications/email.service';
 import { SmsService } from '../notifications/sms.service';
+import { BRAND } from '../config/brand.config';
+
 
 @Injectable()
 export class AuthService {
@@ -111,6 +113,9 @@ export class AuthService {
   /**
    * Generates and sends a 6-digit OTP
    */
+  /**
+   * Generates and sends a 6-digit OTP
+   */
   async sendOtp(identifier: string, type: 'phone' | 'email') {
     // Normalize identifier to prevent case-sensitivity issues
     const cleanIdentifier = identifier.includes('@') 
@@ -118,7 +123,6 @@ export class AuthService {
       : identifier.trim();
 
     const otp = crypto.randomInt(100000, 1000000).toString();
-    console.log(`Generated OTP for ${cleanIdentifier}: ${otp}`); // Debug log for generated OTP
     const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
     const expiryMinutes = this.config.get<number>('OTP_EXPIRY_MINUTES') || 5;
     const expires = new Date(Date.now() + expiryMinutes * 60 * 1000);
@@ -132,27 +136,41 @@ export class AuthService {
       data: { identifier: cleanIdentifier, token: hashedOtp, expires },
     });
 
-    this.logger.log(`Generated OTP for ${cleanIdentifier}: ${otp} (expires in ${expiryMinutes} minutes)`);
+    this.logger.log(`[DEBUG] Generated OTP for ${cleanIdentifier}: ${otp} (expires in ${expiryMinutes} minutes)`);
     
-    const message = `Your Flower Fairy Login OTP is ${otp}. It expires in ${expiryMinutes} minutes.`;
+    const message = `Your AE Naturals Login OTP is ${otp}. It expires in ${expiryMinutes} minutes.`;
     
-    // try {
-    //   if (type === 'phone') {
-    //     await this.smsService.sendSMS(cleanIdentifier, message);
-    //   } else {
-    //     const html = `<div style="font-family: Arial, sans-serif; padding: 20px;">
-    //                     <h2>Flower Fairy Login</h2>
-    //                     <p>Your OTP is <strong style="font-size: 24px;">${otp}</strong>.</p>
-    //                     <p>It expires in ${expiryMinutes} minutes.</p>
-    //                   </div>`;
-    //     await this.emailService.sendEmail(cleanIdentifier, 'Your Flower Fairy Login OTP', html);
-    //   }
-    // } catch (error) {
-    //   this.logger.error(`Failed to send OTP to ${cleanIdentifier}: ${error.message}`);
-    //   throw new BadRequestException('Failed to send OTP. Please check your details and try again.');
-    // }
+    try {
+      let isSent = false;
 
-    return { message: 'OTP sent successfully' };
+      if (type === 'phone') {
+        this.logger.log(`[DEBUG] Delegating to SmsService for ${cleanIdentifier}...`);
+        isSent = await this.smsService.sendSMS(cleanIdentifier, message);
+      } else {
+        this.logger.log(`[DEBUG] Delegating to EmailService for ${cleanIdentifier}...`);
+        const html = `<div style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h2>AE Naturals Login</h2>
+                        <p>Your OTP is <strong style="font-size: 24px;">${otp}</strong>.</p>
+                        <p>It expires in ${expiryMinutes} minutes.</p>
+                      </div>`;
+        isSent = await this.emailService.sendEmail(cleanIdentifier, 'Your AE Naturals Login OTP', html);
+      }
+
+      // 🔥 THE CRITICAL FIX: Check if the service actually returned true
+      if (!isSent) {
+        this.logger.error(`[DEBUG] Service returned FALSE. The message failed to send to ${cleanIdentifier}.`);
+        throw new Error('All configured providers failed to deliver the message.');
+      }
+
+      this.logger.log(`[DEBUG] Message confirmed sent to ${cleanIdentifier} by Provider.`);
+      return { message: 'OTP sent successfully' };
+
+    } catch (error) {
+      this.logger.error(`[DEBUG ERROR] Failed to send OTP to ${cleanIdentifier}: ${error.message}`);
+      
+      // Return a 400 Bad Request to the Frontend so it knows the OTP failed
+      throw new BadRequestException('Failed to send OTP. Ensure your providers are active and properly configured.');
+    }
   }
 
   /**
@@ -227,7 +245,7 @@ async refreshTokens(req: Request, res: Response) {
  */
 private async issueTokens(res: Response, userId: string, email: string | null, role: string) {
   // Use a fallback if email is null (common in phone-only OTP login)
-  const identifier = email || 'user_without_email'; 
+  const identifier = email || BRAND.name; // Use brand name as identifier for phone logins without email  
 
   const payload = { 
     sub: userId, 

@@ -35,7 +35,7 @@ async function main() {
     where: { slug: 'flower-fairy-dehradun' },
     update: {},
     create: {
-      name: 'Flower Fairy',
+      name: 'AE Naturals',
       slug: 'flower-fairy-dehradun',
       industry: 'Floral',
       themeConfig: { primary: "#006044", secondary: "#22C55E" },

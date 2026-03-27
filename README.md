@@ -1,5 +1,5 @@
 
-# 🌸 Flower Fairy Backend
+# 🌸 AE Naturals Backend
 
 A **production-grade Multi-Tenant E-Commerce API** built with **NestJS**, **Prisma**, **Redis**, **Cloudinary**, and **Zod**.
 
