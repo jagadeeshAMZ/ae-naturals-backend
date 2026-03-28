@@ -99,6 +99,9 @@ model Product {
   careInstructions String[] // ["Store below 5°C", "Consume within 24h"]
   deliveryInfo     String[] // ["Same day delivery", "Free over ₹999"]
 
+// NEW: Relation to Extra details
+  extra       ProductExtra?
+
   // Flipkart-style Attribute System
   attributes  ProductAttribute[]
   variants    ProductVariant[]
@@ -129,6 +132,32 @@ model ProductVariant {
   name          String // e.g., "Eggless", "With Vase"
   priceModifier Float   @default(0) // Added to base price
   stock         Int     @default(0)
+}
+
+// NEW MODEL
+model ProductExtra {
+  id              String   @id @default(cuid())
+  productId       String   @unique
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Important Info (Rich Text / Long Strings)
+  safetyInfo      String?  @db.Text
+  ingredients     String?  @db.Text
+  directions      String?  @db.Text
+  legalDisclaimer String?  @db.Text
+
+  // Product Details Table
+  manufacturer    String?
+  countryOfOrigin String?
+  weight          String?
+  dimensions      String?
+  genericName     String?
+
+  // A+ Content Builder Data
+  aPlusContent    Json?    // Stores array of block objects e.g., [{ type: 'banner', image: '...', text: '...' }]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Order {

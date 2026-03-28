@@ -93,6 +93,7 @@ export class ProductsService {
         category: true,
         attributes: true,
         variants: true,
+        extra: true,
       },
     });
 
@@ -134,6 +135,7 @@ export class ProductsService {
     const {
       attributes = [],
       variants = [],
+      extra,
       careInstructions = [],
       deliveryInfo = [],
       ...rest
@@ -155,6 +157,11 @@ export class ProductsService {
         data: {
           ...rest,
           slug,
+          ...(extra && {
+          extra: {
+            create: extra,
+          },
+        }),
           careInstructions,
           deliveryInfo,
           attributes: {
@@ -172,6 +179,7 @@ export class ProductsService {
           },
         },
         include: {
+          extra: true,
           attributes: true,
           variants: true,
           category: true,
@@ -197,6 +205,7 @@ export class ProductsService {
     this.logger.log(`✏️ Updating product: ${id}`);
 
     const {
+      extra,
       attributes = [],
       variants = [],
       images = [],
@@ -233,6 +242,14 @@ export class ProductsService {
       where: { id },
       data: {
         ...rest,
+        ...(extra && {
+          extra: {
+            upsert: {
+              create: extra,
+              update: extra,
+            },
+          },
+        }),
         images,
         attributes: {
           deleteMany: {},
