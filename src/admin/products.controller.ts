@@ -1,10 +1,14 @@
-// src/admin/products.controller.ts
-import { Controller, Put, Post, Delete, Body, Param, UseGuards, Req, BadRequestException, Get } from '@nestjs/common';
+// src\admin\products.controller.ts
+import { Controller, Put, Post, Delete, Body, Param, UseGuards, BadRequestException, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { CreateProductDto, UpdateProductDto } from './dto/create-product.dto'; // <-- Adjust path if needed
 
+@ApiTags('Admin Products')
+@ApiBearerAuth()
 @Controller('admin/products')
 @UseGuards(AuthGuard('jwt'), AdminGuard)
 export class AdminProductsController {
@@ -13,45 +17,53 @@ export class AdminProductsController {
     private productsService: ProductsService
   ) {}
 
-@Get()
+  @Get()
+  @ApiOperation({ summary: 'Get all products (Admin)' })
+  @ApiResponse({ status: 200, description: 'List of all products including inactive ones.' })
   async getAll() {
     return this.productsService.getAllProducts();
   }
-@Post()
-async create(@Body() createProductDto: any) {
-  // 1. Validation
-  if (!createProductDto.name || !createProductDto.price) {
-    throw new BadRequestException('Product name and price are required');
+
+  @Post()
+  @ApiOperation({ summary: 'Create a new product', description: 'Creates a product with variants, attributes, and A+ content.' })
+  @ApiBody({ type: CreateProductDto }) 
+  @ApiResponse({ status: 201, description: 'The product has been successfully created.' })
+  @ApiResponse({ status: 400, description: 'Validation failed (e.g., missing name/price).' })
+  async create(@Body() createProductDto: CreateProductDto) {
+    
+    if (!createProductDto.name || !createProductDto.price) {
+      throw new BadRequestException('Product name and price are required');
+    }
+
+    const result = await this.productsService.createProduct(createProductDto);
+
+    if (result?.storeId) {
+      await this.productsService.invalidateCatalogCache(result.storeId);
+    }
+
+    return result;
   }
 
-  // 2. Execute Creation and capture the result
-  const result = await this.productsService.createProduct(createProductDto);
-
-  // 3. Cache Invalidation (Uses storeId from the newly created product)
-  // We use result.storeId because it's guaranteed to exist after creation
-  if (result?.storeId) {
-    await this.productsService.invalidateCatalogCache(result.storeId);
+  @Put(':id')
+  @ApiOperation({ summary: 'Update an existing product' })
+  @ApiBody({ type: UpdateProductDto, description: 'Send partial or full product data' })
+  @ApiResponse({ status: 200, description: 'The product has been successfully updated.' })
+  @ApiResponse({ status: 404, description: 'Product not found.' })
+  async updateProduct(
+    @Param('id') id: string, 
+    @Body() data: UpdateProductDto 
+  ) {
+    console.log('Received update data:', data);
+    if (!data || Object.keys(data).length === 0) {
+      throw new BadRequestException('Payload is required');
+    }
+console.log('Updating product with ID:', id);
+    return this.productsService.updateProduct(id, data);
   }
-
-  // 4. Finally return the created product to the frontend
-  return result;
-}
-
- 
-@Put(':id') // or @Put(':id')
-async updateProduct(
-  @Param('id') id: string, 
-  @Body() data: any // <--- Ensure @Body() is here and not empty
-) {
-  // Defensive check to prevent the crash
-  if (!data) {
-    throw new BadRequestException('Payload is required');
-  }
-
-  return this.productsService.updateProduct(id, data);
-}
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Delete a product' })
+  @ApiResponse({ status: 200, description: 'The product has been deleted.' })
   async deleteProduct(@Param('id') id: string) {
     return this.productsService.deleteProduct(id);
   }

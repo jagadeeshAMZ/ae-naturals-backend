@@ -1,4 +1,4 @@
-// src/products/dto/create-product.dto.ts
+// src\admin\dto\create-product.dto.ts
 import { IsString, IsNumber, IsArray, IsOptional, IsNotEmpty, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
@@ -76,10 +76,10 @@ export class CreateProductDto {
   @ApiPropertyOptional({ example: 399.00 })
   @IsOptional() @IsNumber() oldPrice?: number | null;
   
-  @ApiProperty({ example: 'cuid_category_123' })
+  @ApiProperty({ example: 'cmn8v1xic0002y8tytq7apepe' })
   @IsString() @IsNotEmpty() categoryId: string;
 
-  @ApiProperty({ example: 'cuid_store_123' })
+  @ApiProperty({ example: 'cmn8v1xi00001y8tyu1cv43s6' })
   @IsString() @IsNotEmpty() storeId: string;
   
   @ApiProperty({ example: ['https://res.cloudinary.com/.../img1.jpg'] })

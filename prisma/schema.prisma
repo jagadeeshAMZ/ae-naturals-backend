@@ -40,6 +40,14 @@ enum Gender {
   OTHER
 }
 
+// Add this enum to your enums section
+enum APlusBlockType {
+  BANNER
+  SPLIT
+  IMAGE_GRID
+  TEXT
+}
+
 // models
 model User {
   id        String     @id @default(cuid())
@@ -99,9 +107,9 @@ model Product {
   careInstructions String[] // ["Store below 5°C", "Consume within 24h"]
   deliveryInfo     String[] // ["Same day delivery", "Free over ₹999"]
 
-// NEW: Relation to Extra details
+  // NEW: Relation to Extra details
   extra       ProductExtra?
-
+  aPlusBlocks APlusContent[]
   // Flipkart-style Attribute System
   attributes  ProductAttribute[]
   variants    ProductVariant[]
@@ -136,15 +144,15 @@ model ProductVariant {
 
 // NEW MODEL
 model ProductExtra {
-  id              String   @id @default(cuid())
-  productId       String   @unique
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   // Important Info (Rich Text / Long Strings)
-  safetyInfo      String?  @db.Text
-  ingredients     String?  @db.Text
-  directions      String?  @db.Text
-  legalDisclaimer String?  @db.Text
+  safetyInfo      String? @db.Text
+  ingredients     String? @db.Text
+  directions      String? @db.Text
+  legalDisclaimer String? @db.Text
 
   // Product Details Table
   manufacturer    String?
@@ -154,10 +162,10 @@ model ProductExtra {
   genericName     String?
 
   // A+ Content Builder Data
-  aPlusContent    Json?    // Stores array of block objects e.g., [{ type: 'banner', image: '...', text: '...' }]
+  aPlusContent Json? // Stores array of block objects e.g., [{ type: 'banner', image: '...', text: '...' }]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Order {
@@ -317,4 +325,19 @@ model Review {
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// NEW: Dedicated model for A+ Content Blocks
+model APlusContent {
+  id        String         @id @default(cuid())
+  productId String
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      APlusBlockType
+  order     Int            @default(0) // Used for drag-and-drop sorting
+  content   Json // Stores block-specific configuration (Banner, Split, Grid, etc.)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([productId])
 }

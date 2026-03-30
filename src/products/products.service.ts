@@ -54,21 +54,16 @@ export class ProductsService {
               include: {
                 category: true,
                 variants: true,
+                extra: true, 
               },
             },
           },
         });
 
         if (!store) {
-          this.logger.error(`❌ Store not found: ${slug}`);
           throw new NotFoundException(`Store ${slug} not found`);
         }
 
-        this.logger.log(
-          `✅ Store: ${store.name} | Products: ${store.products.length}`,
-        );
-
-        this.logger.log(`⏱ ${Date.now() - start}ms`);
         return store;
       },
       3600,
@@ -83,7 +78,6 @@ export class ProductsService {
     const cached = await this.cacheManager.get(cacheKey);
 
     if (cached) {
-      this.logger.log(`⚡ Cache HIT`);
       return cached;
     }
 
@@ -93,16 +87,13 @@ export class ProductsService {
         category: true,
         attributes: true,
         variants: true,
-        extra: true, // ✅ Ensures Extra details/A+ Content loads on the product page
+        extra: true,
       },
     });
 
     if (!product) {
-      this.logger.error(`❌ Product not found`);
       throw new NotFoundException('Product not found');
     }
-
-    this.logger.log(`✅ Found product: ${product.name}`);
 
     await this.cacheManager.set(cacheKey, product, 600000);
     return product;
@@ -110,8 +101,6 @@ export class ProductsService {
 
   // ================== SIMILAR ==================
   async getSimilarProducts(categorySlug: string) {
-    this.logger.log(`🔁 Similar products for: ${categorySlug}`);
-
     const data = await this.prisma.product.findMany({
       where: {
         category: { slug: categorySlug },
@@ -121,10 +110,10 @@ export class ProductsService {
       include: {
         category: true,
         variants: true,
+        extra: true,
       },
     });
 
-    this.logger.log(`✅ Found ${data.length}`);
     return data;
   }
 
@@ -142,40 +131,33 @@ export class ProductsService {
     } = data || {};
 
     if (!rest.storeId) throw new BadRequestException('Store ID required');
-    if (!rest.categoryId)
-      throw new BadRequestException('Category ID required');
+    if (!rest.categoryId) throw new BadRequestException('Category ID required');
 
-    const slug =
-      rest.slug ||
-      rest.name
-        ?.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '');
+    const slug = rest.slug || rest.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
 
     try {
       const product = await this.prisma.product.create({
         data: {
           ...rest,
           slug,
-          // ✅ Correctly mapped creation for 1-to-1 relation with A+ content JSON
-          ...(extra && Object.keys(extra).length > 0 && {
+          careInstructions,
+          deliveryInfo,
+          ...(extra && {
             extra: {
               create: {
-                safetyInfo: extra.safetyInfo,
-                ingredients: extra.ingredients,
-                directions: extra.directions,
-                legalDisclaimer: extra.legalDisclaimer,
-                manufacturer: extra.manufacturer,
-                countryOfOrigin: extra.countryOfOrigin,
-                weight: extra.weight,
-                dimensions: extra.dimensions,
-                genericName: extra.genericName,
-                aPlusContent: extra.aPlusContent || [], // JSON field
+                safetyInfo: extra.safetyInfo || null,
+                ingredients: extra.ingredients || null,
+                directions: extra.directions || null,
+                legalDisclaimer: extra.legalDisclaimer || null,
+                manufacturer: extra.manufacturer || null,
+                countryOfOrigin: extra.countryOfOrigin || null,
+                weight: extra.weight || null,
+                dimensions: extra.dimensions || null,
+                genericName: extra.genericName || null,
+                aPlusContent: Array.isArray(extra.aPlusContent) ? extra.aPlusContent : [], 
               },
             },
           }),
-          careInstructions,
-          deliveryInfo,
           attributes: {
             create: attributes.map((a: any) => ({
               name: a.name,
@@ -191,7 +173,7 @@ export class ProductsService {
           },
         },
         include: {
-          extra: true, // Return created extra content
+          extra: true,
           attributes: true,
           variants: true,
           category: true,
@@ -199,15 +181,10 @@ export class ProductsService {
         },
       });
 
-      this.logger.log(`✅ Product created: ${product.name}`);
       return product;
     } catch (error: any) {
       this.logger.error(`💥 Create failed`, error);
-
-      if (error.code === 'P2002') {
-        throw new BadRequestException('Duplicate slug');
-      }
-
+      if (error.code === 'P2002') throw new BadRequestException('Duplicate slug');
       throw new BadRequestException('Create failed');
     }
   }
@@ -224,34 +201,21 @@ export class ProductsService {
       ...rest
     } = data || {};
 
-    const existing = await this.prisma.product.findUnique({
-      where: { id },
-    });
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Product not found');
 
-    if (!existing) {
-      this.logger.error(`❌ Product not found`);
-      throw new NotFoundException('Product not found');
-    }
-
-    // 🔥 IMAGE DEBUG
-    const removedImages = (existing.images || []).filter(
-      (img) => !images.includes(img),
-    );
-
-    this.logger.log(`🖼 Removed images: ${removedImages.length}`);
-
+    const removedImages = (existing.images || []).filter((img) => !images.includes(img));
     if (removedImages.length) {
-      Promise.all(
-        removedImages.map((url) => this.cloudinary.deleteImage(url)),
-      ).catch((e) => this.logger.error(`Cloudinary cleanup error`, e));
+      Promise.all(removedImages.map((url) => this.cloudinary.deleteImage(url)))
+        .catch((e) => this.logger.error(`Cloudinary cleanup error`, e));
     }
 
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
         ...rest,
-        // ✅ Use UPSERT: Creates 'extra' if the product didn't have it, updates if it does
-        ...(extra && {
+        images,
+        ...(extra !== undefined && {
           extra: {
             upsert: {
               create: {
@@ -264,7 +228,7 @@ export class ProductsService {
                 weight: extra.weight,
                 dimensions: extra.dimensions,
                 genericName: extra.genericName,
-                aPlusContent: extra.aPlusContent || [],
+                aPlusContent: Array.isArray(extra.aPlusContent) ? extra.aPlusContent : [],
               },
               update: {
                 safetyInfo: extra.safetyInfo,
@@ -276,18 +240,14 @@ export class ProductsService {
                 weight: extra.weight,
                 dimensions: extra.dimensions,
                 genericName: extra.genericName,
-                aPlusContent: extra.aPlusContent || [],
+                aPlusContent: Array.isArray(extra.aPlusContent) ? extra.aPlusContent : [],
               },
             },
           },
         }),
-        images,
         attributes: {
           deleteMany: {},
-          create: attributes.map((a: any) => ({
-            name: a.name,
-            value: a.value,
-          })),
+          create: attributes.map((a: any) => ({ name: a.name, value: a.value })),
         },
         variants: {
           deleteMany: {},
@@ -299,150 +259,69 @@ export class ProductsService {
         },
       },
       include: {
-        extra: true, // ✅ Ensure Admin Panel receives the updated extra data back
+        extra: true,
         attributes: true,
         variants: true,
         category: true,
       },
     });
-    // 🧹 CACHE INVALIDATION
-  // 1. Remove the specific product cache so the next 'getProductBySlug' fetches fresh data.
-  await this.cacheManager.del(`product:${updated.slug}`);
-  
-  // 2. Invalidate the store catalog cache so list views are updated.
-  await this.invalidateCatalogCache(updated.storeId);
 
-    this.logger.log(`✅ Updated product`);
+    await this.cacheManager.del(`product:${updated.slug}`);
+    await this.invalidateCatalogCache(updated.storeId);
+
     return updated;
   }
 
   // ================== DELETE ==================
   async deleteProduct(id: string) {
-    this.logger.log(`🗑 Deleting product: ${id}`);
-
-    const product = await this.prisma.product.findUnique({
-      where: { id },
-    });
-
-    if (!product) {
-      this.logger.error(`❌ Product not found`);
-      throw new NotFoundException('Product not found');
-    }
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new NotFoundException('Product not found');
 
     if (product.images?.length) {
-      this.logger.log(`🧹 Cleaning ${product.images.length} images`);
-
-      Promise.all(
-        product.images.map((url) => this.cloudinary.deleteImage(url)),
-      ).catch((e) => this.logger.error(`Cloudinary delete error`, e));
+      Promise.all(product.images.map((url) => this.cloudinary.deleteImage(url)))
+        .catch((e) => this.logger.error(`Cloudinary delete error`, e));
     }
 
     await this.prisma.product.delete({ where: { id } });
-
     await this.invalidateCatalogCache(product.storeId);
-
-    this.logger.log(`✅ Product deleted`);
     return product;
   }
 
   // ================== CACHE ==================
   async invalidateCatalogCache(storeId: string) {
-    this.logger.log(`🧠 Invalidating cache for store: ${storeId}`);
-
-    const store = await this.prisma.store.findUnique({
-      where: { id: storeId },
-    });
-
+    const store = await this.prisma.store.findUnique({ where: { id: storeId } });
     if (store) {
       await this.cacheManager.del(`catalog:${store.slug}`);
-      this.logger.log(`✅ Cache cleared`);
     }
   }
 
   // ================== ALL PRODUCTS ==================
   async getAllProducts() {
-    this.logger.log(`📦 Fetching ALL products`);
-
     return this.prisma.product.findMany({
       include: {
         category: true,
         store: true,
         attributes: true,
         variants: true,
-        extra: true, // ✅ Helpful for admin listing exports
+        extra: true,
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   // ================== DOMAIN RESOLVER ==================
-  /**
-   * Production-Grade Store Resolver
-   * Extracts domain, strips ports, and handles fallbacks securely.
-   */
- async resolveStoreSlug(req: Request): Promise<string> {
-  const start = Date.now();
+  async resolveStoreSlug(req: Request): Promise<string> {
+    const rawDomain = (req.headers['x-tenant-domain'] as string) || (req.headers.origin ? new URL(req.headers.origin).hostname : null) || (req.headers.host as string);
+    const searchDomain = rawDomain ? rawDomain.split(':')[0] : null;
 
-  this.logger.log('🌐 [Store Resolver] Incoming request');
-
-  // 1. Extract raw domain
-  const rawDomain =
-    (req.headers['x-tenant-domain'] as string) ||
-    (req.headers.origin
-      ? new URL(req.headers.origin).hostname
-      : null) ||
-    (req.headers.host as string);
-
-  this.logger.debug(`📥 Raw Domain: ${rawDomain}`);
-
-  // 2. Clean domain (remove port)
-  const searchDomain = rawDomain ? rawDomain.split(':')[0] : null;
-
-  this.logger.debug(`🧹 Clean Domain: ${searchDomain}`);
-
-  // 3. Try domain-based resolution
-  if (searchDomain) {
-    this.logger.log(`🔍 Searching store by domain: ${searchDomain}`);
-
-    const storeByDomain = await this.prisma.store.findFirst({
-      where: { domain: searchDomain },
-    });
-
-    if (storeByDomain) {
-      this.logger.log(
-        `✅ Store found by domain → ${storeByDomain.slug} (${storeByDomain.name})`,
-      );
-      this.logger.log(`⏱ Resolve Time: ${Date.now() - start}ms`);
-      return storeByDomain.slug;
+    if (searchDomain) {
+      const storeByDomain = await this.prisma.store.findFirst({ where: { domain: searchDomain } });
+      if (storeByDomain) return storeByDomain.slug;
     }
 
-    this.logger.warn(`⚠️ No store mapped to domain: ${searchDomain}`);
-  } else {
-    this.logger.warn(`⚠️ No domain extracted from request`);
+    const defaultStore = await this.prisma.store.findFirst({ where: { isDefault: true } });
+    if (defaultStore) return defaultStore.slug;
+
+    throw new BadRequestException('Critical: No store mapped to this domain and no default store is configured.');
   }
-
-  // 4. Fallback to default store
-  this.logger.log(`🔄 Trying fallback to default store`);
-
-  const defaultStore = await this.prisma.store.findFirst({
-    where: { isDefault: true },
-  });
-
-  if (defaultStore) {
-    this.logger.warn(
-      `⚠️ Using DEFAULT store → ${defaultStore.slug} (${defaultStore.name})`,
-    );
-    this.logger.log(`⏱ Resolve Time: ${Date.now() - start}ms`);
-    return defaultStore.slug;
-  }
-
-  // 5. Critical failure
-  this.logger.error(`❌ CRITICAL: No store found for domain or default`);
-  this.logger.error(`👉 Raw Domain: ${rawDomain}`);
-  this.logger.error(`👉 Clean Domain: ${searchDomain}`);
-
-  throw new BadRequestException(
-    'Critical: No store mapped to this domain and no default store is configured in the database.',
-  );
-}
 }
